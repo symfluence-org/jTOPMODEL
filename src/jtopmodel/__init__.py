@@ -18,7 +18,7 @@ Algorithms:
 Components:
     - TopmodelPreProcessor: Prepares forcing data (P, T, PET)
     - TopmodelRunner: Executes model simulations
-    - TopmodelPostprocessor: Extracts streamflow results
+    - TopmodelPostProcessor: Extracts streamflow results
     - TopmodelWorker: Handles calibration
 
 References:
@@ -39,7 +39,7 @@ _LAZY_IMPORTS = {
     # Main components
     'TopmodelPreProcessor': ('.preprocessor', 'TopmodelPreProcessor'),
     'TopmodelRunner': ('.runner', 'TopmodelRunner'),
-    'TopmodelPostprocessor': ('.postprocessor', 'TopmodelPostprocessor'),
+    'TopmodelPostProcessor': ('.postprocessor', 'TopmodelPostProcessor'),
     'TopmodelResultExtractor': ('.extractor', 'TopmodelResultExtractor'),
 
     # Parameters
@@ -98,7 +98,7 @@ def register() -> None:
     from .calibration.worker import TopmodelWorker
     from .config import TopmodelConfigAdapter
     from .extractor import TopmodelResultExtractor
-    from .postprocessor import TopmodelPostprocessor
+    from .postprocessor import TopmodelPostProcessor
     from .preprocessor import TopmodelPreProcessor
     from .runner import TopmodelRunner
 
@@ -107,7 +107,7 @@ def register() -> None:
         preprocessor=TopmodelPreProcessor,
         runner=TopmodelRunner,
         runner_method='run_topmodel',
-        postprocessor=TopmodelPostprocessor,
+        postprocessor=TopmodelPostProcessor,
         config_adapter=TopmodelConfigAdapter,
         result_extractor=TopmodelResultExtractor,
         optimizer=TopmodelModelOptimizer,
@@ -147,7 +147,7 @@ if TYPE_CHECKING:
         create_params_from_dict,
         generate_ti_distribution,
     )
-    from .postprocessor import TopmodelPostprocessor
+    from .postprocessor import TopmodelPostProcessor
     from .preprocessor import TopmodelPreProcessor
     from .runner import TopmodelRunner
 
@@ -156,7 +156,7 @@ __all__ = [
     # Main components
     'TopmodelPreProcessor',
     'TopmodelRunner',
-    'TopmodelPostprocessor',
+    'TopmodelPostProcessor',
     'TopmodelResultExtractor',
 
     # Configuration

@@ -5,13 +5,13 @@
 TOPMODEL Postprocessor.
 
 Extracts and processes TOPMODEL output for analysis and visualization.
-Uses StandardModelPostprocessor for minimal boilerplate.
+Uses StandardModelPostProcessor for minimal boilerplate.
 """
 
-from symfluence.models.base.standard_postprocessor import StandardModelPostprocessor
+from symfluence.models.base.standard_postprocessor import StandardModelPostProcessor
 
 
-class TopmodelPostprocessor(StandardModelPostprocessor):
+class TopmodelPostProcessor(StandardModelPostProcessor):
     """
     Postprocessor for TOPMODEL output.
 
