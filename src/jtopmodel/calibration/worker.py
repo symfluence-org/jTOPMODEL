@@ -31,6 +31,27 @@ if HAS_JAX:
     import jax.numpy as jnp
 
 
+def _ensure_x64() -> None:
+    """Enable JAX float64 for gradient computation.
+
+    Reverse-mode gradients through the long lax.scan recurrence (thousands of
+    daily steps) accumulate intermediate cotangents that overflow float32's
+    ~3.4e38 range -> inf -> NaN for every parameter that flows through the
+    subsurface s_bar feedback (confirmed: NaN appears at scan length >= ~300
+    steps in float32, vanishes entirely in float64). float64 gives the reverse
+    pass the headroom it needs.
+
+    This must run at gradient-call time, NOT at import: sibling JAX model packages
+    (e.g. jFUSE) globally disable x64 in their __init__, and import order is not
+    guaranteed, so an import-time setting here can be overridden. Setting it here
+    runs after all imports and wins. The flag is a global JAX config; enabling it
+    is idempotent and keeps the finite-difference trial path and the native-AD
+    gradient path at the same precision within a calibration process.
+    """
+    if HAS_JAX and not jax.config.jax_enable_x64:
+        jax.config.update("jax_enable_x64", True)
+
+
 class TopmodelWorker(InMemoryModelWorker):
     """Worker for TOPMODEL calibration.
 
@@ -282,14 +303,17 @@ class TopmodelWorker(InMemoryModelWorker):
             if not self.initialize():
                 return None
 
+        _ensure_x64()
         try:
             from jtopmodel.losses import kge_loss, nse_loss
 
             assert self._forcing is not None
-            precip = jnp.array(self._forcing['precip'])
-            temp = jnp.array(self._forcing['temp'])
-            pet = jnp.array(self._forcing['pet'])
-            obs = jnp.array(self._observations)
+            # float64 across the whole graph: the reverse pass through the scan
+            # recurrence is numerically unstable in float32 (see x64 note above).
+            precip = jnp.asarray(self._forcing['precip'], dtype=jnp.float64)
+            temp = jnp.asarray(self._forcing['temp'], dtype=jnp.float64)
+            pet = jnp.asarray(self._forcing['pet'], dtype=jnp.float64)
+            obs = jnp.asarray(self._observations, dtype=jnp.float64)
 
             def loss_fn(params_array, param_names):
                 params_dict = dict(zip(param_names, params_array))
@@ -335,14 +359,17 @@ class TopmodelWorker(InMemoryModelWorker):
             if not self.initialize():
                 return self.penalty_score, None
 
+        _ensure_x64()
         try:
             from jtopmodel.losses import kge_loss, nse_loss
 
             assert self._forcing is not None
-            precip = jnp.array(self._forcing['precip'])
-            temp = jnp.array(self._forcing['temp'])
-            pet = jnp.array(self._forcing['pet'])
-            obs = jnp.array(self._observations)
+            # float64 across the whole graph: the reverse pass through the scan
+            # recurrence is numerically unstable in float32 (see x64 note above).
+            precip = jnp.asarray(self._forcing['precip'], dtype=jnp.float64)
+            temp = jnp.asarray(self._forcing['temp'], dtype=jnp.float64)
+            pet = jnp.asarray(self._forcing['pet'], dtype=jnp.float64)
+            obs = jnp.asarray(self._observations, dtype=jnp.float64)
 
             def loss_fn(params_array, param_names):
                 params_dict = dict(zip(param_names, params_array))
