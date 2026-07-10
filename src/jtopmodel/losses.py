@@ -119,12 +119,24 @@ def kge_loss(
         sim_eval = sim[warmup_days:]
         obs_eval = obs[warmup_days:]
 
-        # KGE components
-        r = jnp.corrcoef(sim_eval, obs_eval)[0, 1]  # Correlation
-        alpha = jnp.std(sim_eval) / (jnp.std(obs_eval) + 1e-10)  # Variability ratio
-        beta = jnp.mean(sim_eval) / (jnp.mean(obs_eval) + 1e-10)  # Bias ratio
+        # KGE components with denominators guarded against a zero-variance sim.
+        # jnp.corrcoef / jnp.std divide by std(sim) with no epsilon, so a degenerate
+        # (extreme-parameter) run that makes sim ~constant gives a 0/0 correlation ->
+        # NaN, and reverse-mode then produces a NaN gradient for EVERY parameter.
+        # An explicit epsilon-guarded correlation (and +eps under each sqrt) keeps the
+        # loss and its gradient finite everywhere; in the normal regime it matches the
+        # corrcoef form to ~1e-12. This mirrors how the finite-difference path degrades
+        # gracefully (penalty score) at degenerate parameters instead of emitting NaN.
+        sim_c = sim_eval - jnp.mean(sim_eval)
+        obs_c = obs_eval - jnp.mean(obs_eval)
+        sim_ss = jnp.sqrt(jnp.sum(sim_c * sim_c) + 1e-12)
+        obs_ss = jnp.sqrt(jnp.sum(obs_c * obs_c) + 1e-12)
+        n = sim_eval.shape[0]
+        r = jnp.sum(sim_c * obs_c) / (sim_ss * obs_ss)          # Correlation
+        alpha = (sim_ss / jnp.sqrt(n)) / (jnp.std(obs_eval) + 1e-10)  # Variability ratio
+        beta = jnp.mean(sim_eval) / (jnp.mean(obs_eval) + 1e-10)      # Bias ratio
 
-        kge = 1.0 - jnp.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
+        kge = 1.0 - jnp.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2 + 1e-12)
         return -kge
     else:
         sim, _ = simulate_numpy(precip, temp, pet, params, warmup_days=warmup_days)

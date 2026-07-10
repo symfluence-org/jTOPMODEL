@@ -190,8 +190,20 @@ def topmodel_step(
     # Since lambda_bar is absorbed (TI distribution centered at 0), lambda_bar = 0
     # dt is in hours; for daily: dt=24
     ln_dt = xp.log(xp.maximum(dt, 1e-6))
-    szq = xp.exp(params.lnTe + ln_dt)
-    q_b_m = szq * xp.exp(-s_bar / xp.maximum(params.m, 1e-6))
+    # Single clipped exponential instead of szq * exp(-s_bar/m). Two purposes:
+    # (1) at extreme parameters (e.g. lnTe near its upper bound) the product form
+    #     produces a huge baseflow -> non-finite runoff -> NaN loss/gradient for
+    #     every parameter; clipping the argument bounds the forward so an optimizer
+    #     probing bad corners still gets a finite (large) loss with a usable
+    #     gradient, the way the finite-difference path degrades to a penalty score.
+    # (2) folding szq into the exponent avoids the large*tiny product whose reverse
+    #     pass is needlessly ill-conditioned.
+    # NOTE: this bounds the *value* range but does NOT fix the float32 reverse-mode
+    # overflow through the scan recurrence — that requires float64 (enabled in the
+    # calibration worker). Both are needed together for fully NaN-free gradients.
+    q_b_m = xp.exp(xp.clip(
+        params.lnTe + ln_dt - s_bar / xp.maximum(params.m, 1e-6), -50.0, 50.0
+    ))
 
     # --- 2. Local deficit per TI class ---
     # S_local_i = max(S_bar + m * (lambda_bar - lnaotb_i), 0)
@@ -213,13 +225,17 @@ def topmodel_step(
     new_srz = new_srz + actual_et_m  # ET increases deficit
 
     # --- 5. Unsaturated zone drainage ---
-    # quz = min(Suz / (S_local * td), Suz) where S_local > 0
+    # quz = min(Suz / (S_local * td), Suz) where S_local > 0.
+    # Autodiff-safe: dividing by s_local (which is ~0 near saturation) makes XLA
+    # evaluate a 1/0 gradient for the *masked* where-branch, poisoning the whole
+    # gradient with NaN under JIT even though the forward value is fine. Force the
+    # denominator to a constant 1.0 wherever the branch is not taken, so the
+    # division never sees a near-zero value in either branch.
+    denom = xp.maximum(s_local * params.td, 1e-10)
+    safe_denom = xp.where(s_local > 0.0, denom, 1.0)
     quz = xp.where(
         s_local > 0.0,
-        xp.minimum(
-            new_suz / xp.maximum(s_local * params.td, 1e-10),
-            new_suz
-        ),
+        xp.minimum(new_suz / safe_denom, new_suz),
         0.0
     )
     new_suz = new_suz - quz
