@@ -315,13 +315,17 @@ class TopmodelWorker(InMemoryModelWorker):
             pet = jnp.asarray(self._forcing['pet'], dtype=jnp.float64)
             obs = jnp.asarray(self._observations, dtype=jnp.float64)
 
+            cal_slice = self.get_calibration_slice()
+
             def loss_fn(params_array, param_names):
                 params_dict = dict(zip(param_names, params_array))
                 if metric.lower() == 'nse':
                     return nse_loss(params_dict, precip, temp, pet, obs,
-                                    self.warmup_days, use_jax=True)
+                                    self.warmup_days, use_jax=True,
+                                    cal_slice=cal_slice)
                 return kge_loss(params_dict, precip, temp, pet, obs,
-                                self.warmup_days, use_jax=True)
+                                self.warmup_days, use_jax=True,
+                                cal_slice=cal_slice)
 
             grad_fn = jax.grad(loss_fn)
             param_names = list(params.keys())
@@ -371,13 +375,17 @@ class TopmodelWorker(InMemoryModelWorker):
             pet = jnp.asarray(self._forcing['pet'], dtype=jnp.float64)
             obs = jnp.asarray(self._observations, dtype=jnp.float64)
 
+            cal_slice = self.get_calibration_slice()
+
             def loss_fn(params_array, param_names):
                 params_dict = dict(zip(param_names, params_array))
                 if metric.lower() == 'nse':
                     return nse_loss(params_dict, precip, temp, pet, obs,
-                                    self.warmup_days, use_jax=True)
+                                    self.warmup_days, use_jax=True,
+                                    cal_slice=cal_slice)
                 return kge_loss(params_dict, precip, temp, pet, obs,
-                                self.warmup_days, use_jax=True)
+                                self.warmup_days, use_jax=True,
+                                cal_slice=cal_slice)
 
             value_and_grad_fn = jax.value_and_grad(loss_fn)
             param_names = list(params.keys())
