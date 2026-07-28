@@ -67,9 +67,19 @@ class TopmodelParameterManager(BaseParameterManager):
         return self.topmodel_params
 
     def _load_parameter_bounds(self) -> Dict[str, Dict[str, float]]:
-        """Return TOPMODEL parameter bounds from central registry."""
-        from symfluence.optimization.core.parameter_bounds_registry import get_topmodel_bounds
-        return get_topmodel_bounds()
+        """Return TOPMODEL parameter bounds, owned by this package.
+
+        Was ``get_topmodel_bounds()`` from symfluence's shared catalogue.
+        TOPMODEL predates the ``register_model_bounds`` seam, so its bounds
+        lived in the framework and could not be changed without a framework
+        release. They now come from ``jtopmodel.parameters.PARAM_BOUNDS`` --
+        the values this package already uses everywhere else, verified
+        identical to what the catalogue served (11 names, zero differences).
+        """
+        return {
+            name: {'min': float(lo), 'max': float(hi)}
+            for name, (lo, hi) in PARAM_BOUNDS.items()
+        }
 
     def update_model_files(self, params: Dict[str, float]) -> bool:
         """TOPMODEL runs in-memory; parameters passed directly to model."""
