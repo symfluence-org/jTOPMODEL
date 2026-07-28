@@ -14,7 +14,7 @@ No sub-daily timestep scaling is needed (unlike HBV).
 """
 
 import warnings
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -31,6 +31,45 @@ except ImportError:
 from .parameters import create_params_from_dict
 
 # =============================================================================
+# EVALUATION WINDOW
+# =============================================================================
+
+def _eval_window(
+    sim: Any,
+    obs: Any,
+    warmup_days: int,
+    cal_slice: Optional[Tuple[int, int]],
+) -> Tuple[Any, Any]:
+    """
+    Restrict simulated and observed series to the scored window.
+
+    Warmup is always dropped from the front. ``cal_slice`` then narrows the
+    remainder to the calibration period, and passing it is what keeps a
+    gradient-based optimizer honest: without it the loss spans everything
+    after warmup, so the optimizer trains on the held-out evaluation period
+    and its reported score is computed over a different window than the
+    calibration metric reported at final evaluation.
+
+    Args:
+        sim: Simulated series, full length including warmup.
+        obs: Observed series, aligned with ``sim``.
+        warmup_days: Leading timesteps to drop.
+        cal_slice: ``(start, end)`` within the post-warmup arrays, or None
+            to score the whole post-warmup record.
+
+    Returns:
+        Tuple of (sim_window, obs_window).
+    """
+    sim_eval = sim[warmup_days:]
+    obs_eval = obs[warmup_days:]
+    if cal_slice is not None:
+        start, end = cal_slice
+        sim_eval = sim_eval[start:end]
+        obs_eval = obs_eval[start:end]
+    return sim_eval, obs_eval
+
+
+# =============================================================================
 # LOSS FUNCTIONS (DIFFERENTIABLE)
 # =============================================================================
 
@@ -42,6 +81,7 @@ def nse_loss(
     obs: Any,
     warmup_days: int = 365,
     use_jax: bool = True,
+    cal_slice: Optional[Tuple[int, int]] = None,
 ) -> Any:
     """
     Compute negative NSE (Nash-Sutcliffe Efficiency) loss.
@@ -56,6 +96,9 @@ def nse_loss(
         obs: Observed streamflow timeseries (mm/day)
         warmup_days: Days to exclude from loss calculation
         use_jax: Whether to use JAX backend
+        cal_slice: Calibration-period (start, end) within the post-warmup
+            arrays. Pass this whenever a calibration period is configured,
+            or the loss also scores the held-out evaluation period.
 
     Returns:
         Negative NSE (loss to minimize)
@@ -67,8 +110,7 @@ def nse_loss(
 
     if use_jax and HAS_JAX:
         sim, _ = simulate_jax(precip, temp, pet, params, warmup_days=warmup_days)
-        sim_eval = sim[warmup_days:]
-        obs_eval = obs[warmup_days:]
+        sim_eval, obs_eval = _eval_window(sim, obs, warmup_days, cal_slice)
 
         ss_res = jnp.sum((sim_eval - obs_eval) ** 2)
         ss_tot = jnp.sum((obs_eval - jnp.mean(obs_eval)) ** 2)
@@ -76,8 +118,7 @@ def nse_loss(
         return -nse
     else:
         sim, _ = simulate_numpy(precip, temp, pet, params, warmup_days=warmup_days)
-        sim_eval = sim[warmup_days:]
-        obs_eval = obs[warmup_days:]
+        sim_eval, obs_eval = _eval_window(sim, obs, warmup_days, cal_slice)
 
         ss_res = np.sum((sim_eval - obs_eval) ** 2)
         ss_tot = np.sum((obs_eval - np.mean(obs_eval)) ** 2)
@@ -93,6 +134,7 @@ def kge_loss(
     obs: Any,
     warmup_days: int = 365,
     use_jax: bool = True,
+    cal_slice: Optional[Tuple[int, int]] = None,
 ) -> Any:
     """
     Compute negative KGE (Kling-Gupta Efficiency) loss.
@@ -105,6 +147,9 @@ def kge_loss(
         obs: Observed streamflow timeseries (mm/day)
         warmup_days: Days to exclude from loss calculation
         use_jax: Whether to use JAX backend
+        cal_slice: Calibration-period (start, end) within the post-warmup
+            arrays. Pass this whenever a calibration period is configured,
+            or the loss also scores the held-out evaluation period.
 
     Returns:
         Negative KGE (loss to minimize)
@@ -116,8 +161,7 @@ def kge_loss(
 
     if use_jax and HAS_JAX:
         sim, _ = simulate_jax(precip, temp, pet, params, warmup_days=warmup_days)
-        sim_eval = sim[warmup_days:]
-        obs_eval = obs[warmup_days:]
+        sim_eval, obs_eval = _eval_window(sim, obs, warmup_days, cal_slice)
 
         # KGE components with denominators guarded against a zero-variance sim.
         # jnp.corrcoef / jnp.std divide by std(sim) with no epsilon, so a degenerate
@@ -140,8 +184,7 @@ def kge_loss(
         return -kge
     else:
         sim, _ = simulate_numpy(precip, temp, pet, params, warmup_days=warmup_days)
-        sim_eval = sim[warmup_days:]
-        obs_eval = obs[warmup_days:]
+        sim_eval, obs_eval = _eval_window(sim, obs, warmup_days, cal_slice)
 
         r = np.corrcoef(sim_eval, obs_eval)[0, 1]
         alpha = np.std(sim_eval) / (np.std(obs_eval) + 1e-10)
@@ -161,6 +204,7 @@ def get_nse_gradient_fn(
     pet: Any,
     obs: Any,
     warmup_days: int = 365,
+    cal_slice: Optional[Tuple[int, int]] = None,
 ) -> Optional[Callable]:
     """
     Get gradient function for NSE loss.
@@ -173,6 +217,7 @@ def get_nse_gradient_fn(
         pet: PET timeseries (fixed)
         obs: Observed streamflow (fixed)
         warmup_days: Warmup period
+        cal_slice: Calibration-period (start, end) within the post-warmup arrays
 
     Returns:
         Gradient function if JAX available, None otherwise.
@@ -183,7 +228,8 @@ def get_nse_gradient_fn(
 
     def loss_fn(params_array, param_names):
         params_dict = dict(zip(param_names, params_array))
-        return nse_loss(params_dict, precip, temp, pet, obs, warmup_days, use_jax=True)
+        return nse_loss(params_dict, precip, temp, pet, obs, warmup_days,
+                        use_jax=True, cal_slice=cal_slice)
 
     return jax.grad(loss_fn)
 
@@ -194,6 +240,7 @@ def get_kge_gradient_fn(
     pet: Any,
     obs: Any,
     warmup_days: int = 365,
+    cal_slice: Optional[Tuple[int, int]] = None,
 ) -> Optional[Callable]:
     """
     Get gradient function for KGE loss.
@@ -206,6 +253,7 @@ def get_kge_gradient_fn(
         pet: PET timeseries (fixed)
         obs: Observed streamflow (fixed)
         warmup_days: Warmup period
+        cal_slice: Calibration-period (start, end) within the post-warmup arrays
 
     Returns:
         Gradient function if JAX available, None otherwise.
@@ -216,6 +264,7 @@ def get_kge_gradient_fn(
 
     def loss_fn(params_array, param_names):
         params_dict = dict(zip(param_names, params_array))
-        return kge_loss(params_dict, precip, temp, pet, obs, warmup_days, use_jax=True)
+        return kge_loss(params_dict, precip, temp, pet, obs, warmup_days,
+                        use_jax=True, cal_slice=cal_slice)
 
     return jax.grad(loss_fn)
