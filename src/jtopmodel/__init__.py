@@ -115,6 +115,41 @@ def register() -> None:
         parameter_manager=TopmodelParameterManager,
     )
 
+    # Contribute TOPMODEL's calibration bounds to symfluence's catalogue.
+    #
+    # TOPMODEL predates the register_model_bounds seam, so symfluence carried
+    # a get_topmodel_bounds() entry as a compatibility shim -- meaning a change
+    # to TOPMODEL's bounds needed a FRAMEWORK release. Registering here makes
+    # this package the owner: get_model_bounds('TOPMODEL') resolves what we
+    # register, ahead of the built-in entry, so this works against current
+    # symfluence and lets a later release drop the compat entry entirely.
+    #
+    # Values come from jtopmodel.parameters.PARAM_BOUNDS, already the single
+    # source for every other bounds consumer in this package, and verified
+    # identical to what the framework served (11 names, zero differences) --
+    # so adopting the seam changes no calibration result.
+    #
+    # The catalogue entries are namespaced 'topmodel_*' and served with the
+    # prefix stripped, because bare 'm' is a DIFFERENT parameter there (RHESSys
+    # decay, 0.5-5.0). Registering unprefixed would collide with it and the
+    # central definition would win, silently widening TOPMODEL's 'm'. Keep the
+    # prefix + strip_prefix, matching get_topmodel_bounds().
+    from symfluence.core.calibration.parameters import ParameterInfo, register_model_bounds
+
+    from .parameters import PARAM_BOUNDS
+
+    register_model_bounds(
+        "TOPMODEL",
+        params={
+            f"topmodel_{name}": ParameterInfo(
+                float(lo), float(hi), description=f"TOPMODEL {name}"
+            )
+            for name, (lo, hi) in PARAM_BOUNDS.items()
+        },
+        names=[f"topmodel_{name}" for name in PARAM_BOUNDS],
+        strip_prefix="topmodel_",
+    )
+
 
 # Type hints for IDE support
 if TYPE_CHECKING:
