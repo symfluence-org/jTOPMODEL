@@ -91,29 +91,28 @@ def __dir__():
 
 
 def register() -> None:
-    """Register TOPMODEL components with symfluence plugin registry."""
-    from symfluence.core.registry import model_manifest
-    from .calibration.optimizer import TopmodelModelOptimizer
-    from .calibration.parameter_manager import TopmodelParameterManager
-    from .calibration.worker import TopmodelWorker
-    from .config import TopmodelConfigAdapter
-    from .extractor import TopmodelResultExtractor
-    from .postprocessor import TopmodelPostProcessor
-    from .preprocessor import TopmodelPreProcessor
-    from .runner import TopmodelRunner
+    """Register TOPMODEL components with symfluence plugin registry.
 
-    model_manifest(
-        "TOPMODEL",
-        preprocessor=TopmodelPreProcessor,
-        runner=TopmodelRunner,
-        runner_method='run_topmodel',
-        postprocessor=TopmodelPostProcessor,
-        config_adapter=TopmodelConfigAdapter,
-        result_extractor=TopmodelResultExtractor,
-        optimizer=TopmodelModelOptimizer,
-        worker=TopmodelWorker,
-        parameter_manager=TopmodelParameterManager,
-    )
+    Only the config adapter is imported here: it is light, and model_manifest
+    derives the config schema from it. Every other component is registered by
+    dotted path and imported on first lookup, so plugin discovery during
+    ``import symfluence`` does not load the calibration stack or JAX.
+    """
+    from symfluence.core.registries import R
+    from symfluence.core.registry import model_manifest
+
+    from .config import TopmodelConfigAdapter
+
+    model_manifest("TOPMODEL", config_adapter=TopmodelConfigAdapter)
+
+    pkg = __name__
+    R.preprocessors.add_lazy("TOPMODEL", f"{pkg}.preprocessor.TopmodelPreProcessor")
+    R.runners.add_lazy("TOPMODEL", f"{pkg}.runner.TopmodelRunner", runner_method='run_topmodel')
+    R.postprocessors.add_lazy("TOPMODEL", f"{pkg}.postprocessor.TopmodelPostProcessor")
+    R.result_extractors.add_lazy("TOPMODEL", f"{pkg}.extractor.TopmodelResultExtractor")
+    R.optimizers.add_lazy("TOPMODEL", f"{pkg}.calibration.optimizer.TopmodelModelOptimizer")
+    R.workers.add_lazy("TOPMODEL", f"{pkg}.calibration.worker.TopmodelWorker")
+    R.parameter_managers.add_lazy("TOPMODEL", f"{pkg}.calibration.parameter_manager.TopmodelParameterManager")
 
 
 # Type hints for IDE support

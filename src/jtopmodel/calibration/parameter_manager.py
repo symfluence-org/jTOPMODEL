@@ -14,7 +14,8 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from jtopmodel.parameters import DEFAULT_PARAMS, PARAM_BOUNDS
-from symfluence.optimization.core.base_parameter_manager import BaseParameterManager
+
+from .._symfluence_compat import BaseParameterManager
 
 
 class TopmodelParameterManager(BaseParameterManager):
@@ -68,7 +69,7 @@ class TopmodelParameterManager(BaseParameterManager):
 
     def _load_parameter_bounds(self) -> Dict[str, Dict[str, float]]:
         """Return TOPMODEL parameter bounds from central registry."""
-        from symfluence.optimization.core.parameter_bounds_registry import get_topmodel_bounds
+        from .._symfluence_compat import get_topmodel_bounds
         return get_topmodel_bounds()
 
     def update_model_files(self, params: Dict[str, float]) -> bool:
